@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
+
 #include <err.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -46,6 +52,8 @@ struct console_client {
 
 static const uint8_t esc_str[] = { '~', '.' };
 
+static const char *tty_name = NULL;
+
 static enum process_rc process_tty(struct console_client *client)
 {
 	uint8_t e, buf[4096];
@@ -58,7 +66,6 @@ static enum process_rc process_tty(struct console_client *client)
 		return PROCESS_ERR;
 	if (len == 0)
 		return PROCESS_EXIT;
-
 	/* check escape sequence status */
 	for (i = 0; i < len; i++) {
 		/* the escape string is only valid after a newline */
@@ -161,6 +168,7 @@ static int client_init(struct console_client *client)
 {
 	struct sockaddr_un addr;
 	int rc;
+	char tmp[MAX_PATH_LEN];
 
 	client->console_sd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (!client->console_sd) {
@@ -170,7 +178,26 @@ static int client_init(struct console_client *client)
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	memcpy(&addr.sun_path, &console_socket_path, console_socket_path_len);
+//	memcpy(&addr.sun_path, &console_socket_path, console_socket_path_len);
+
+	bzero(tmp, MAX_PATH_LEN);
+	tmp[1]='\0';
+
+	if(strstr(tty_name, ":2200"))
+		memcpy(&tmp[1], "ttyS0",  strlen("ttyS0"));
+	else if(strstr(tty_name, ":2201"))
+		memcpy(&tmp[1], "ttyS1",  strlen("ttyS1"));
+	else if(strstr(tty_name, ":2202"))
+		memcpy(&tmp[1], "ttyS2",  strlen("ttyS2"));
+	else if(strstr(tty_name, ":2203"))
+		memcpy(&tmp[1], "ttyS3",  strlen("ttyS3"));
+	else
+	{
+		warn("Invalid server port(%s) \n", tty_name);
+		return -1;
+	}
+	
+	memcpy(&addr.sun_path, tmp, strlen("ttySx")+1);
 
 	rc = connect(client->console_sd, (struct sockaddr *)&addr,
 			sizeof(addr));
@@ -190,18 +217,26 @@ static void client_fini(struct console_client *client)
 	close(client->console_sd);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	struct console_client _client, *client;
 	struct pollfd pollfds[2];
 	enum process_rc prc;
 	int rc;
+	
+	if (optind >= argc) {
+		warnx("Required argument <DEVICE> missing");
+		return EXIT_FAILURE;
+	}
+
+	tty_name = argv[optind];
 
 	client = &_client;
 	memset(client, 0, sizeof(*client));
 
 	rc = client_init(client);
 	if (rc)
+
 		return EXIT_FAILURE;
 
 	rc = client_tty_init(client);

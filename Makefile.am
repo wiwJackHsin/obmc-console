@@ -1,7 +1,14 @@
+#**************************************************************
+#*                                                            *
+#*   Copyright (C) Microsoft Corporation. All rights reserved.*
+#*                                                            *
+#**************************************************************
+
 sbin_PROGRAMS = obmc-console-server
 bin_PROGRAMS = obmc-console-client
 
 EXTRA_DIST = obmc-console.conf.sample
+AM_CFLAGS = -Wall -Wextra -Werror -pthread
 
 obmc_console_server_CPPFLAGS = \
 	-DLOCALSTATEDIR=\"$(localstatedir)\" \

@@ -16,6 +16,12 @@
  * limitations under the License.
  */
 
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
+
 #define _GNU_SOURCE
 
 #include <assert.h>
@@ -35,6 +41,8 @@
 
 #include <sys/types.h>
 #include <poll.h>
+
+#include <pthread.h>
 
 #include "console-server.h"
 
@@ -67,17 +75,6 @@ static const int n_internal_pollfds = 1;
 
 /* state shared with the signal handler */
 static bool sigint;
-
-static void usage(const char *progname)
-{
-	fprintf(stderr,
-"usage: %s [options] <DEVICE>\n"
-"\n"
-"Options:\n"
-"  --config <FILE>  Use FILE for configuration\n"
-"",
-		progname);
-}
 
 /* populates tty_dev and tty_sysfs_devnode, using the tty kernel name */
 static int tty_find_device(struct console *console)
@@ -174,6 +171,10 @@ static void tty_init_termios(struct console *console)
 		return;
 	}
 
+	//Initial default baudrate to 115200 bps
+	cfsetispeed(&termios, B115200);
+	cfsetospeed(&termios, B115200);
+
 	cfmakeraw(&termios);
 	rc = tcsetattr(console->tty_fd, TCSANOW, &termios);
 	if (rc)
@@ -259,21 +260,27 @@ static void handlers_init(struct console *console, struct config *config)
 
 	console->n_handlers = &__stop_handlers - &__start_handlers;
 	console->handlers = &__start_handlers;
-
 	printf("%d handler%s\n", console->n_handlers,
 			console->n_handlers == 1 ? "" : "s");
 
+	//Only initial matched handlers
 	for (i = 0; i < console->n_handlers; i++) {
-		handler = console->handlers[i];
+		if((strcmp(console->tty_kname, "ttyS0") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS1") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2202") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2203") == 0))
+		{
+			handler = console->handlers[i];
+			
+			rc = 0;
+			if (handler->init)
+				rc = handler->init(handler, console, config);
 
-		rc = 0;
-		if (handler->init)
-			rc = handler->init(handler, console, config);
-
-		handler->active = rc == 0;
-
-		printf("  %s [%sactive]\n", handler->name,
-				handler->active ? "" : "in");
+			handler->active = rc == 0;
+			
+			printf("  %s [%sactive]\n", handler->name,
+					handler->active ? "" : "in");
+		}
 	}
 }
 
@@ -305,9 +312,16 @@ static int handlers_data_in(struct console *console, uint8_t *buf, size_t len)
 		if (!handler->data_in)
 			continue;
 
-		tmp = handler->data_in(handler, buf, len);
-		if (tmp == HANDLER_EXIT)
-			rc = 1;
+		//Write console input to matched port
+		if((strcmp(console->tty_kname, "ttyS0") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS1") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2202") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2203") == 0))
+		{
+			tmp = handler->data_in(handler, buf, len);
+			if (tmp == HANDLER_EXIT)
+				rc = 1;
+		}
 	}
 
 	return rc;
@@ -346,7 +360,6 @@ struct poller *console_register_poller(struct console *console,
 
 	console->pollfds[n].fd = fd;
 	console->pollfds[n].events = events;
-
 	return poller;
 }
 
@@ -398,6 +411,7 @@ static int call_pollers(struct console *console)
 	 * Process poll events by iterating through the pollers and pollfds
 	 * in-step, calling any pollers that we've found revents for.
 	 */
+
 	for (i = 0; i < console->n_pollers; i++) {
 		poller = console->pollers[i];
 		pollfd = &console->pollfds[i];
@@ -407,6 +421,7 @@ static int call_pollers(struct console *console)
 
 		prc = poller->fn(poller->handler, pollfd->revents,
 				poller->data);
+
 		if (prc == POLLER_EXIT)
 			rc = -1;
 		else if (prc == POLLER_REMOVE)
@@ -431,7 +446,6 @@ static int call_pollers(struct console *console)
 		if (!removed)
 			break;
 	}
-
 	return rc;
 }
 
@@ -483,9 +497,9 @@ int run_console(struct console *console)
 			if (rc)
 				break;
 		}
-
 		/* ... and then the pollers */
 		rc = call_pollers(console);
+
 		if (rc)
 			break;
 	}
@@ -499,74 +513,78 @@ static const struct option options[] = {
 	{ 0,  0, 0, 0},
 };
 
-int main(int argc, char **argv)
+static const char tty_console_name[MAX_TTY_NUM][8] = {"ttyS0", "ttyS1", "ttyS2", "ttyS3"};
+static struct config *config = NULL;
+
+void *tty_console_thread(void *arg)
 {
-	const char *config_filename = NULL;
-	const char *config_tty_kname = NULL;
 	struct console *console;
-	struct config *config;
-	int rc;
 
-	rc = -1;
-
-	for (;;) {
-		int c, idx;
-
-		c = getopt_long(argc, argv, "c:", options, &idx);
-		if (c == -1)
-			break;
-
-		switch (c) {
-		case 'c':
-			config_filename = optarg;
-			break;
-		case 'h':
-		case '?':
-			usage(argv[0]);
-			return EXIT_SUCCESS;
-		}
-	}
-
-	if (optind >= argc) {
-		warnx("Required argument <DEVICE> missing");
-		usage(argv[0]);
-		return EXIT_FAILURE;
-	}
-
-	config_tty_kname = argv[optind];
+	int rc, tty_index = *(int *)arg;
 
 	console = malloc(sizeof(struct console));
 	memset(console, 0, sizeof(*console));
 	console->pollfds = calloc(n_internal_pollfds,
 			sizeof(*console->pollfds));
 
-	config = config_init(config_filename);
-	if (!config) {
-		warnx("Can't read configuration, exiting.");
-		goto out_free;
-	}
-
-	console->tty_kname = config_tty_kname;
+	console->tty_kname = tty_console_name[tty_index];
 
 	rc = tty_init(console, config);
 	if (rc)
-		goto out_config_fini;
+		config_fini(config);
+	else
+	{
+		handlers_init(console, config);
 
-	handlers_init(console, config);
+		rc = run_console(console);
 
-	rc = run_console(console);
+		handlers_fini(console);
+	}
 
-	handlers_fini(console);
-
-out_config_fini:
-	config_fini(config);
-
-out_free:
 	free(console->pollers);
 	free(console->pollfds);
 	free(console->tty_sysfs_devnode);
 	free(console->tty_dev);
 	free(console);
+	
+	pthread_exit(NULL);
+}
 
-	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+int main(void)
+{
+	const char *config_filename = NULL;
+
+	pthread_t tty_thread[MAX_TTY_NUM];
+	pthread_attr_t tty_thread_attr[MAX_TTY_NUM];
+	
+	int i, rc;
+
+	config = config_init(config_filename);
+	if (!config) {
+		warnx("Can't read configuration, exiting.");
+
+		return EXIT_FAILURE;
+	}
+	
+	for(i = 0; i < MAX_TTY_NUM; i++)
+	{
+		if(pthread_attr_init(&tty_thread_attr[i]) != 0)
+			printf("\r\nttyS%d thread attribute creation failed", i+1);
+		
+		if(pthread_attr_setdetachstate(&tty_thread_attr[i], PTHREAD_CREATE_DETACHED) != 0)
+			printf("\r\nttyS%d setting thread attribute creation failed", i+1);
+		
+		rc = pthread_create(&tty_thread[i], &tty_thread_attr[i], tty_console_thread, (void *)&i);
+		if(rc != 0)
+		{
+			printf("\r\nttyS%d Thread creation failed: svr_node_thread", i+1);
+			exit(-1);
+		}
+		
+		sleep(3);
+	}
+	
+	while(1) sleep(3);
+	
+	return 0;
 }

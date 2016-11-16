@@ -14,9 +14,18 @@
  * limitations under the License.
  */
 
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
+
 #include <poll.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#define MAX_PATH_LEN 	32
+#define MAX_TTY_NUM	4
 
 struct console;
 struct config;
