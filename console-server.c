@@ -43,6 +43,7 @@
 #include <poll.h>
 
 #include <pthread.h>
+#include <systemd/sd-bus.h>
 
 #include "console-server.h"
 
@@ -75,6 +76,9 @@ static const int n_internal_pollfds = 1;
 
 /* state shared with the signal handler */
 static bool sigint;
+
+sd_bus *bus = NULL;
+int uart_release[MAX_TTY_NUM] = {-1, -1, -1, -1};
 
 /* populates tty_dev and tty_sysfs_devnode, using the tty kernel name */
 static int tty_find_device(struct console *console)
@@ -455,7 +459,25 @@ static void sighandler(int signal)
 		sigint = true;
 }
 
-int run_console(struct console *console)
+static struct config *config = NULL;
+
+static int check_uart_release(struct console *console, int index)
+{
+	if(uart_release[index] == 1) {
+		close(console->tty_fd);
+		console->pollfds[console->n_pollers].fd = -1;
+		uart_release[index] = -1;
+
+		return 1;
+	} else if(uart_release[index] == 0) {
+		tty_init(console, config);
+		uart_release[index] = -1;
+	}
+
+	return 0;
+}
+
+int run_console(struct console *console, int index)
 {
 	sighandler_t sighandler_save;
 	int rc;
@@ -472,8 +494,11 @@ int run_console(struct console *console)
 			break;
 		}
 
+		if (check_uart_release(console, index) == 1)
+			continue;
+
 		rc = poll(console->pollfds,
-				console->n_pollers + n_internal_pollfds, -1);
+				console->n_pollers + n_internal_pollfds, 5000);
 		if (rc < 0) {
 			if (errno == EINTR) {
 				continue;
@@ -481,6 +506,14 @@ int run_console(struct console *console)
 				warn("poll error");
 				break;
 			}
+		}
+
+		if (check_uart_release(console, index) == 1)
+			continue;
+
+		if (rc == 0) {
+			printf("poll timeout\n");
+			continue;
 		}
 
 		/* process internal fd first */
@@ -514,7 +547,7 @@ static const struct option options[] = {
 };
 
 static const char tty_console_name[MAX_TTY_NUM][8] = {"ttyS0", "ttyS1", "ttyS2", "ttyS3"};
-static struct config *config = NULL;
+//static struct config *config = NULL;
 
 void *tty_console_thread(void *arg)
 {
@@ -536,7 +569,7 @@ void *tty_console_thread(void *arg)
 	{
 		handlers_init(console, config);
 
-		rc = run_console(console);
+		rc = run_console(console, tty_index);
 
 		handlers_fini(console);
 	}
@@ -546,7 +579,72 @@ void *tty_console_thread(void *arg)
 	free(console->tty_sysfs_devnode);
 	free(console->tty_dev);
 	free(console);
-	
+
+	pthread_exit(NULL);
+}
+
+const char * FILTER = "type='signal',interface='org.openbmc.control.ExpanderUpdate',member='ExpUARTSignal'";
+
+static int console_uart_handler(sd_bus_message *msg, void *user_data __attribute__((unused)), sd_bus_error *ret_error __attribute__((unused)))
+{
+	int r = -1;
+	uint8_t exp_id, is_update;
+
+	r = sd_bus_message_read(msg, "yy", &exp_id, &is_update);
+	if (r < 0) {
+		fprintf(stderr, "Failed to parse message: %s\n", strerror(-r));
+		return -1;
+	}
+
+	if (is_update) {
+		uart_release[exp_id] = 1;
+	} else {
+		uart_release[exp_id] = 0;
+	}
+
+	return 0;
+}
+
+void *check_exp_update_thread(void *arg __attribute__((unused)))
+{
+	int r;
+
+	printf("Start check_exp_update_thread\n");
+
+	r = sd_bus_open_system(&bus);
+	if (r < 0) {
+		fprintf(stderr, "Failed to connect to system bus: %s\n",
+		strerror(-r));
+		goto finish;
+	}
+
+	/* Watch for request data */
+	r = sd_bus_add_match(bus, NULL, FILTER, console_uart_handler, NULL);
+	if (r < 0) {
+		fprintf(stderr, "Failed: sd_bus_add_match: %s : %s\n", strerror(-r), FILTER);
+		goto finish;
+	}
+
+	for (;;) {
+		/* Process requests */
+		r = sd_bus_process(bus, NULL);
+		if (r < 0) {
+			fprintf(stderr, "Failed to process bus: %s\n", strerror(-r));
+			goto finish;
+		}
+		if (r > 0) {
+			continue;
+		}
+
+		r = sd_bus_wait(bus, (uint64_t) - 1);
+		if (r < 0) {
+			fprintf(stderr, "Failed to wait on bus: %s\n", strerror(-r));
+			goto finish;
+		}
+	}
+
+finish:
+	sd_bus_unref(bus);
 	pthread_exit(NULL);
 }
 
@@ -556,6 +654,8 @@ int main(void)
 
 	pthread_t tty_thread[MAX_TTY_NUM];
 	pthread_attr_t tty_thread_attr[MAX_TTY_NUM];
+	pthread_t exp_update_thread;
+	pthread_attr_t exp_update_thread_attr;
 	
 	int i, rc;
 
@@ -583,8 +683,21 @@ int main(void)
 		
 		sleep(3);
 	}
-	
+
+	if(pthread_attr_init(&exp_update_thread_attr) != 0)
+		printf("\r\nCheck Expander update thread attribute creation failed");
+
+	if(pthread_attr_setdetachstate(&exp_update_thread_attr, PTHREAD_CREATE_DETACHED) != 0)
+		printf("\r\nCheck Expander update thread attribute creation failed");
+
+	rc = pthread_create(&exp_update_thread, &exp_update_thread_attr, check_exp_update_thread, NULL);
+	if(rc != 0)
+	{
+		printf("\r\nCheck Expander update Thread creation failed: svr_node_thread");
+		exit(-1);
+	}
+
 	while(1) sleep(3);
-	
+
 	return 0;
 }
