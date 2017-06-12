@@ -148,7 +148,7 @@ static enum poller_ret client_poll(struct handler *handler,
 
 	if (events & POLLIN) {
 		rc = read(client->fd, buf, sizeof(buf));
-		if (rc <= 0)
+		if (rc <= 0 && errno != EAGAIN)
 			goto err_close;
 
 		console_data_out(sh->console, buf, rc);
