@@ -25,7 +25,7 @@
 #include <stdbool.h>
 
 #define MAX_PATH_LEN 	32
-#define MAX_TTY_NUM	4
+#define MAX_TTY_NUM	2
 
 struct console;
 struct config;

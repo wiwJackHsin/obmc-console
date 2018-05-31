@@ -280,7 +280,7 @@ static void handlers_init(struct console *console, struct config *config)
 
 			handler->active = rc == 0;
 			
-			printf("  %s [%sactiveJ]\n", handler->name,
+			printf("  %s [%sactiveJack]\n", handler->name,
 					handler->active ? "" : "in");
 		}
 	}
@@ -542,7 +542,7 @@ static const struct option options[] = {
 	{ 0,  0, 0, 0},
 };
 
-static const char tty_console_name[MAX_TTY_NUM][8] = {"ttyS2", "ttyS3"};
+static const char tty_console_name[MAX_TTY_NUM][2] = {"ttyS2", "ttyS3"};
 //static struct config *config = NULL;
 
 void *tty_console_thread(void *arg)
