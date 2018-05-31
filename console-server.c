@@ -282,7 +282,7 @@ static void handlers_init(struct console *console, struct config *config)
 
 			handler->active = rc == 0;
 			
-			printf("  %s [%sactive]\n", handler->name,
+			printf("  %s [%sactiveJ]\n", handler->name,
 					handler->active ? "" : "in");
 		}
 	}
@@ -658,6 +658,8 @@ int main(void)
 	pthread_attr_t exp_update_thread_attr;
 	
 	int i, rc;
+
+        printf("%s, %d\n", __func__, __LINE__);
 
 	config = config_init(config_filename);
 	if (!config) {
