@@ -270,9 +270,7 @@ static void handlers_init(struct console *console, struct config *config)
 	//Only initial matched handlers
 	for (i = 0; i < console->n_handlers; i++) {
 		if((strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2202") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2203") == 0))
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0))
 		{
 			handler = console->handlers[i];
 			
@@ -318,9 +316,7 @@ static int handlers_data_in(struct console *console, uint8_t *buf, size_t len)
 
 		//Write console input to matched port
 		if((strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2202") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2203") == 0))
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0))
 		{
 			tmp = handler->data_in(handler, buf, len);
 			if (tmp == HANDLER_EXIT)
@@ -546,7 +542,7 @@ static const struct option options[] = {
 	{ 0,  0, 0, 0},
 };
 
-static const char tty_console_name[MAX_TTY_NUM][8] = {"ttyS0", "ttyS1", "ttyS2", "ttyS3"};
+static const char tty_console_name[MAX_TTY_NUM][8] = {"ttyS2", "ttyS3"};
 //static struct config *config = NULL;
 
 void *tty_console_thread(void *arg)

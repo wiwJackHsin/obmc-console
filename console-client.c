@@ -184,13 +184,9 @@ static int client_init(struct console_client *client)
 	tmp[1]='\0';
 
 	if(strstr(tty_name, ":2200"))
-		memcpy(&tmp[1], "ttyS0",  strlen("ttyS0"));
+		memcpy(&tmp[1], "ttyS0",  strlen("ttyS2"));
 	else if(strstr(tty_name, ":2201"))
-		memcpy(&tmp[1], "ttyS1",  strlen("ttyS1"));
-	else if(strstr(tty_name, ":2202"))
-		memcpy(&tmp[1], "ttyS2",  strlen("ttyS2"));
-	else if(strstr(tty_name, ":2203"))
-		memcpy(&tmp[1], "ttyS3",  strlen("ttyS3"));
+		memcpy(&tmp[1], "ttyS1",  strlen("ttyS3"));
 	else
 	{
 		warn("Invalid server port(%s) \n", tty_name);

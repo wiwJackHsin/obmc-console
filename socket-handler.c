@@ -344,27 +344,8 @@ static struct socket_handler socket_handler_2201 = {
 	},
 };
 
-static struct socket_handler socket_handler_2202 = {
-	.handler = {
-		.name		= "socket_2202",
-		.init		= socket_init,
-		.data_in	= socket_data,
-		.fini		= socket_fini,
-	},
-};
-
-static struct socket_handler socket_handler_2203 = {
-	.handler = {
-		.name		= "socket_2203",
-		.init		= socket_init,
-		.data_in	= socket_data,
-		.fini		= socket_fini,
-	},
-};
-
 
 console_register_handler(&socket_handler_2200.handler);
 console_register_handler(&socket_handler_2201.handler);
-console_register_handler(&socket_handler_2202.handler);
-console_register_handler(&socket_handler_2203.handler);
+
 
