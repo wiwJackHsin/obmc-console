@@ -269,8 +269,8 @@ static void handlers_init(struct console *console, struct config *config)
 
 	//Only initial matched handlers
 	for (i = 0; i < console->n_handlers; i++) {
-		if((strcmp(console->tty_kname, "ttyS0") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS1") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
+		if((strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
 		   (strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2202") == 0) ||
 		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2203") == 0))
 		{
@@ -317,8 +317,8 @@ static int handlers_data_in(struct console *console, uint8_t *buf, size_t len)
 			continue;
 
 		//Write console input to matched port
-		if((strcmp(console->tty_kname, "ttyS0") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
-		   (strcmp(console->tty_kname, "ttyS1") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
+		if((strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0) ||
 		   (strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2202") == 0) ||
 		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2203") == 0))
 		{
