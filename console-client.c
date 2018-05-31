@@ -198,7 +198,7 @@ static int client_init(struct console_client *client)
 	rc = connect(client->console_sd, (struct sockaddr *)&addr,
 			sizeof(addr));
 	if (rc) {
-		warn("Can't connect to console server");
+		warn("Can't connect to console server, rc:%d,", rc);
 		close(client->console_sd);
 		return -1;
 	}

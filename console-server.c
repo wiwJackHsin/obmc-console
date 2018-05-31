@@ -78,7 +78,7 @@ static const int n_internal_pollfds = 1;
 static bool sigint;
 
 sd_bus *bus = NULL;
-int uart_release[MAX_TTY_NUM] = {-1, -1, -1, -1};
+int uart_release[MAX_TTY_NUM] = {-1, -1};
 
 /* populates tty_dev and tty_sysfs_devnode, using the tty kernel name */
 static int tty_find_device(struct console *console)
