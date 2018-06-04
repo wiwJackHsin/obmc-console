@@ -1,18 +1,8 @@
-/**
- * Copyright © 2016 IBM Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
 
 #define _GNU_SOURCE
 
@@ -31,6 +21,8 @@
 #include <sys/un.h>
 
 #include "console-server.h"
+
+const size_t buffer_size_max = 100 * 1024;
 
 struct client {
 	struct socket_handler		*sh;
@@ -201,7 +193,7 @@ static enum poller_ret client_poll(struct handler *handler,
 
 	if (events & POLLIN) {
 		rc = recv(client->fd, buf, sizeof(buf), MSG_DONTWAIT);
-		if (rc < 0) {
+		if (rc < 0 && errno != EAGAIN) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK)
 				return POLLER_OK;
 			else
@@ -267,6 +259,7 @@ static int socket_init(struct handler *handler, struct console *console,
 	struct socket_handler *sh = to_socket_handler(handler);
 	struct sockaddr_un addr;
 	int rc;
+	char tmp[MAX_PATH_LEN];
 
 	sh->console = console;
 	sh->clients = NULL;
@@ -280,12 +273,20 @@ static int socket_init(struct handler *handler, struct console *console,
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	memcpy(&addr.sun_path, &console_socket_path, console_socket_path_len);
+
+	if(strlen(console->tty_kname) >= (MAX_PATH_LEN -1)) {
+		warn("console->tty_kname length > MAX_PATH_LEN");
+		return -1;
+	}
+
+	bzero(tmp, MAX_PATH_LEN);
+	tmp[1]='\0';
+	memcpy(&tmp[1], console->tty_kname,  strlen(console->tty_kname));
+	memcpy(&addr.sun_path, tmp, strlen(console->tty_kname)+1);
 
 	rc = bind(sh->sd, (struct sockaddr *)&addr, sizeof(addr));
 	if (rc) {
-		warn("Can't bind to socket path %s",
-				console_socket_path_readable);
+		warn("Can't bind to socket path %s", &tmp[1]);
 		return -1;
 	}
 
@@ -301,6 +302,27 @@ static int socket_init(struct handler *handler, struct console *console,
 	return 0;
 }
 
+// static int socket_data(struct handler *handler, uint8_t *buf, size_t len)
+// {
+// 	struct socket_handler *sh = to_socket_handler(handler);
+// 	int i, rc;
+
+// 	for (i = 0; i < sh->n_clients; i++) {
+// 		struct client *client = sh->clients[i];
+// 		rc = client_send_or_queue(client, buf, len);
+// 		if (!rc)
+// 			continue;
+
+// 		/* if we failed to send data, close the client. This will
+// 		 * remove it from the clients array, so skip back to the item
+// 		 * that has taken its place
+// 		 */
+// 		client_close(sh, client);
+// 		i--;
+// 	}
+// 	return 0;
+// }
+
 static void socket_fini(struct handler *handler)
 {
 	struct socket_handler *sh = to_socket_handler(handler);
@@ -314,13 +336,24 @@ static void socket_fini(struct handler *handler)
 	close(sh->sd);
 }
 
-static struct socket_handler socket_handler = {
+static struct socket_handler socket_handler_2200 = {
 	.handler = {
-		.name		= "socket",
+		.name		= "socket_2200",
 		.init		= socket_init,
+		// .data_in	= socket_data,
 		.fini		= socket_fini,
 	},
 };
 
-console_handler_register(&socket_handler.handler);
+static struct socket_handler socket_handler_2201 = {
+	.handler = {
+		.name		= "socket_2201",
+		.init		= socket_init,
+		// .data_in	= socket_data,
+		.fini		= socket_fini,
+	},
+};
+
+console_handler_register(&socket_handler_2200.handler);
+console_handler_register(&socket_handler_2201.handler);
 

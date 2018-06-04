@@ -1,20 +1,8 @@
-/**
- * Console server process for OpenBMC
- *
- * Copyright © 2016 IBM Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
 
 #define _GNU_SOURCE
 
@@ -31,31 +19,11 @@
 #include <string.h>
 #include <getopt.h>
 #include <limits.h>
-#include <termios.h>
-
-#include <sys/types.h>
+#include <termios.>
+#include <sys/types.hh>
 #include <poll.h>
-
+#include <pthread.h>
 #include "console-server.h"
-
-struct console {
-	const char	*tty_kname;
-	char		*tty_sysfs_devnode;
-	char		*tty_dev;
-	int		tty_sirq;
-	int		tty_lpc_addr;
-	int		tty_fd;
-
-	struct ringbuffer	*rb;
-
-	struct handler	**handlers;
-	int		n_handlers;
-
-	struct poller	**pollers;
-	int		n_pollers;
-
-	struct pollfd	*pollfds;
-};
 
 struct poller {
 	struct handler	*handler;
@@ -72,17 +40,6 @@ const size_t buffer_size = 128 * 1024;
 
 /* state shared with the signal handler */
 static bool sigint;
-
-static void usage(const char *progname)
-{
-	fprintf(stderr,
-"usage: %s [options] <DEVICE>\n"
-"\n"
-"Options:\n"
-"  --config <FILE>  Use FILE for configuration\n"
-"",
-		progname);
-}
 
 /* populates tty_dev and tty_sysfs_devnode, using the tty kernel name */
 static int tty_find_device(struct console *console)
@@ -201,6 +158,10 @@ static void tty_init_termios(struct console *console)
 		return;
 	}
 
+	//Initial default baudrate to 115200 bps
+	cfsetispeed(&termios, B115200);
+	cfsetospeed(&termios, B115200);
+
 	cfmakeraw(&termios);
 	rc = tcsetattr(console->tty_fd, TCSANOW, &termios);
 	if (rc)
@@ -290,17 +251,22 @@ static void handlers_init(struct console *console, struct config *config)
 	printf("%d handler%s\n", console->n_handlers,
 			console->n_handlers == 1 ? "" : "s");
 
+    //Only initial matched handlers
 	for (i = 0; i < console->n_handlers; i++) {
-		handler = console->handlers[i];
+		if((strcmp(console->tty_kname, "ttyS2") == 0 && strcmp(console->handlers[i]->name, "socket_2200") == 0) ||
+		   (strcmp(console->tty_kname, "ttyS3") == 0 && strcmp(console->handlers[i]->name, "socket_2201") == 0))
+		{
+			handler = console->handlers[i];
 
-		rc = 0;
-		if (handler->init)
-			rc = handler->init(handler, console, config);
+			rc = 0;
+			if (handler->init) {
+				rc = handler->init(handler, console, config);
+			}
 
-		handler->active = rc == 0;
+			handler->active = rc == 0;
 
-		printf("  %s [%sactive]\n", handler->name,
-				handler->active ? "" : "in");
+			printf("  %s [%sactive]\n", handler->name, handler->active ? "" : "in");
+		}
 	}
 }
 
@@ -520,78 +486,79 @@ int run_console(struct console *console)
 }
 static const struct option options[] = {
 	{ "config",	required_argument,	0, 'c'},
-	{ 0,  0, 0, 0},
+	{ 0, 0},
 };
 
-int main(int argc, char **argv)
+static const char tty_console_name[MAX_TTY_NUM][8] = {"ttyS2", "ttyS3"};
+static struct config *config = NULL;
+
+void *tty_console_thread(void *arg)
 {
-	const char *config_filename = NULL;
-	const char *config_tty_kname = NULL;
 	struct console *console;
-	struct config *config;
-	int rc;
-
-	rc = -1;
-
-	for (;;) {
-		int c, idx;
-
-		c = getopt_long(argc, argv, "c:", options, &idx);
-		if (c == -1)
-			break;
-
-		switch (c) {
-		case 'c':
-			config_filename = optarg;
-			break;
-		case 'h':
-		case '?':
-			usage(argv[0]);
-			return EXIT_SUCCESS;
-		}
-	}
-
-	if (optind >= argc) {
-		warnx("Required argument <DEVICE> missing");
-		usage(argv[0]);
-		return EXIT_FAILURE;
-	}
-
-	config_tty_kname = argv[optind];
+	int rc, tty_index = *(int *)arg;
 
 	console = malloc(sizeof(struct console));
 	memset(console, 0, sizeof(*console));
-	console->pollfds = calloc(n_internal_pollfds,
-			sizeof(*console->pollfds));
+	console->pollfds = calloc(n_internal_pollfds, sizeof(*console->pollfds));
+	console->tty_kname = tty_console_name[tty_index];
 	console->rb = ringbuffer_init(buffer_size);
-
-	config = config_init(config_filename);
-	if (!config) {
-		warnx("Can't read configuration, exiting.");
-		goto out_free;
-	}
-
-	console->tty_kname = config_tty_kname;
 
 	rc = tty_init(console, config);
 	if (rc)
-		goto out_config_fini;
+	{
+		config_fini(config);
+	}
+	else
+	{
+		handlers_init(console, config);
+		rc = run_console(console);
+		handlers_fini(console);
+	}
 
-	handlers_init(console, config);
-
-	rc = run_console(console);
-
-	handlers_fini(console);
-
-out_config_fini:
-	config_fini(config);
-
-out_free:
 	free(console->pollers);
 	free(console->pollfds);
 	free(console->tty_sysfs_devnode);
 	free(console->tty_dev);
 	free(console);
 
-	return rc == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+	pthread_exit(NULL);
+}
+
+int main(int argc, char **argv)
+{
+	const char *config_filename = NULL;
+
+	pthread_t tty_thread[MAX_TTY_NUM];
+	pthread_attr_t tty_thread_attr[MAX_TTY_NUM];
+
+	int i, rc;
+
+	config = config_init(config_filename);
+	if (!config)
+	{
+		warnx("Can't read configuration, exiting.");
+		return EXIT_FAILURE;
+	}
+
+	for(i = 0; i < MAX_TTY_NUM; i++)
+	{
+		if(pthread_attr_init(&tty_thread_attr[i]) != 0)
+			printf("\r\nttyS%d thread attribute creation failed", i+1);
+
+		if(pthread_attr_setdetachstate(&tty_thread_attr[i], PTHREAD_CREATE_DETACHED) != 0)
+			printf("\r\nttyS%d setting thread attribute creation failed", i+1);
+
+		rc = pthread_create(&tty_thread[i], &tty_thread_attr[i], tty_console_thread, (void *)&i);
+		if(rc != 0)
+		{
+			printf("\r\nttyS%d Thread creation failed: svr_node_thread", i+1);
+			exit(-1);
+		}
+
+		sleep(3);
+	}
+
+	while(1) sleep(3);
+
+	return 0;
 }

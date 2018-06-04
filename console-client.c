@@ -1,18 +1,8 @@
-/**
- * Copyright © 2016 IBM Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
 
 #include <err.h>
 #include <stdbool.h>
@@ -45,6 +35,8 @@ struct console_client {
 };
 
 static const uint8_t esc_str[] = { '~', '.' };
+
+static const char *tty_name = NULL;
 
 static enum process_rc process_tty(struct console_client *client)
 {
@@ -161,6 +153,7 @@ static int client_init(struct console_client *client)
 {
 	struct sockaddr_un addr;
 	int rc;
+	char tmp[MAX_PATH_LEN];
 
 	client->console_sd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (!client->console_sd) {
@@ -170,7 +163,26 @@ static int client_init(struct console_client *client)
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	memcpy(&addr.sun_path, &console_socket_path, console_socket_path_len);
+	//memcpy(&addr.sun_path, &console_socket_path, console_socket_path_len);
+
+	bzero(tmp, MAX_PATH_LEN);
+	tmp[1]='\0';
+
+	if(strstr(tty_name, ":2200"))
+	{
+		memcpy(&tmp[1], "ttyS2",  strlen("ttyS2"));
+	}
+	else if(strstr(tty_name, ":2201"))
+	{
+		memcpy(&tmp[1], "ttyS3",  strlen("ttyS3"));
+	}
+	else
+	{
+		warn("Invalid server port(%s) \n", tty_name);
+		return -1;
+	}
+
+	memcpy(&addr.sun_path, tmp, strlen("ttySx")+1);
 
 	rc = connect(client->console_sd, (struct sockaddr *)&addr,
 			sizeof(addr));
@@ -190,12 +202,19 @@ static void client_fini(struct console_client *client)
 	close(client->console_sd);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	struct console_client _client, *client;
 	struct pollfd pollfds[2];
 	enum process_rc prc;
 	int rc;
+
+	if (optind >= argc) {
+		warnx("Required argument <DEVICE> missing");
+		return EXIT_FAILURE;
+	}
+
+	tty_name = argv[optind];
 
 	client = &_client;
 	memset(client, 0, sizeof(*client));
