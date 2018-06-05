@@ -1,24 +1,35 @@
-/**
- * Copyright © 2016 IBM Corporation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/*************************************************************
+*                                                            *
+*   Copyright (C) Microsoft Corporation. All rights reserved.*
+*                                                            *
+*************************************************************/
 
 #include <poll.h>
 #include <stdint.h>
 #include <stdbool.h>
 
-struct console;
+#define MAX_PATH_LEN 32
+#define MAX_TTY_NUM 2
+
+struct console {
+	const char	*tty_kname;
+	char		*tty_sysfs_devnode;
+	char		*tty_dev;
+	int		tty_sirq;
+	int		tty_lpc_addr;
+	int		tty_fd;
+
+	struct ringbuffer	*rb;
+
+	struct handler	**handlers;
+	int		n_handlers;
+
+	struct poller	**pollers;
+	int		n_pollers;
+
+	struct pollfd	*pollfds;
+};
+
 struct config;
 
 /* Handler API.
