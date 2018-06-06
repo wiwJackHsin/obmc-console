@@ -18,7 +18,28 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-struct console;
+#define MAX_PATH_LEN 32
+#define MAX_TTY_NUM 2
+
+struct console {
+	const char	*tty_kname;
+	char		*tty_sysfs_devnode;
+	char		*tty_dev;
+	int		tty_sirq;
+	int		tty_lpc_addr;
+	int		tty_fd;
+
+	struct ringbuffer	*rb;
+
+	struct handler	**handlers;
+	int		n_handlers;
+
+	struct poller	**pollers;
+	int		n_pollers;
+
+	struct pollfd	*pollfds;
+};
+
 struct config;
 
 /* Handler API.
